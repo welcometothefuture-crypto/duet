@@ -91,13 +91,13 @@ const CLAUDE_MODELS = [
   { v: 'claude-3-5-sonnet-20241022',label: 'claude-3-5-sonnet',         hint: 'legacy' },
   { v: 'claude-3-5-haiku-20241022', label: 'claude-3-5-haiku',          hint: 'legacy' },
 ];
+// All ChatGPT-account compatible. API-only models (gpt-5-codex, o3, gpt-4o)
+// are intentionally excluded — they error out for users on the standard
+// ChatGPT login flow, which is most people.
 const CODEX_MODELS = [
-  { v: '',                  label: '(CLI default)',     hint: 'whatever codex picks' },
-  { v: 'gpt-5-codex',       label: 'gpt-5-codex',       hint: 'codex flagship' },
-  { v: 'codex-mini-latest', label: 'codex-mini-latest', hint: 'cheap & fast' },
+  { v: 'codex-mini-latest', label: 'codex-mini-latest', hint: 'fast · code-tuned · DEFAULT' },
+  { v: '',                  label: '(CLI default)',     hint: 'let codex pick for your tier' },
   { v: 'o4-mini',           label: 'o4-mini',           hint: 'reasoning · light' },
-  { v: 'o3',                label: 'o3',                hint: 'reasoning · strong' },
-  { v: 'gpt-4o',            label: 'gpt-4o',            hint: 'general' },
 ];
 const REASONING = [
   { v: 'low',    label: 'Low',    hint: 'fastest' },
@@ -219,7 +219,8 @@ function applyBeta() {
   } else {
     if (mc.value === 'haiku' || !mc.value) { mc.value = 'opus'; mcBtn.querySelector('.mp-label').textContent = 'opus'; }
     mcBtn.disabled = false; mcBtn.classList.remove('locked');
-    if (!mx.value) mxBtn.querySelector('.mp-label').textContent = '(CLI default)';
+    // Restore the sensible default when leaving beta — fast, code-tuned, works on ChatGPT auth.
+    if (!mx.value) { mx.value = 'codex-mini-latest'; mxBtn.querySelector('.mp-label').textContent = 'codex-mini-latest'; }
     mxBtn.disabled = false; mxBtn.classList.remove('locked');
   }
   const hint = el('modelHint');
