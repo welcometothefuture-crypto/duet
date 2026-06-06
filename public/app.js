@@ -77,26 +77,156 @@ function collectRoles() {
   return roles;
 }
 
+// ---------------------------------------------------------------- model picker
+// Custom dropdown styled like the Claude Code / Codex selectors. Click the
+// styled button to open a floating menu; click an option to set the hidden input.
+const CLAUDE_MODELS = [
+  { v: 'opus',   label: 'Opus (latest)',    hint: 'most capable' },
+  { v: 'sonnet', label: 'Sonnet (latest)',  hint: 'balanced default' },
+  { v: 'haiku',  label: 'Haiku (latest)',   hint: 'fastest & cheapest' },
+  { sep: true },
+  { v: 'claude-opus-4-20250514',    label: 'claude-opus-4-20250514',    hint: 'pinned' },
+  { v: 'claude-sonnet-4-20250514',  label: 'claude-sonnet-4-20250514',  hint: 'pinned' },
+  { v: 'claude-3-7-sonnet-20250219',label: 'claude-3-7-sonnet',         hint: 'legacy' },
+  { v: 'claude-3-5-sonnet-20241022',label: 'claude-3-5-sonnet',         hint: 'legacy' },
+  { v: 'claude-3-5-haiku-20241022', label: 'claude-3-5-haiku',          hint: 'legacy' },
+];
+const CODEX_MODELS = [
+  { v: '',                  label: '(CLI default)',     hint: 'whatever codex picks' },
+  { v: 'gpt-5-codex',       label: 'gpt-5-codex',       hint: 'codex flagship' },
+  { v: 'codex-mini-latest', label: 'codex-mini-latest', hint: 'cheap & fast' },
+  { v: 'o4-mini',           label: 'o4-mini',           hint: 'reasoning · light' },
+  { v: 'o3',                label: 'o3',                hint: 'reasoning · strong' },
+  { v: 'gpt-4o',            label: 'gpt-4o',            hint: 'general' },
+];
+const REASONING = [
+  { v: 'low',    label: 'Low',    hint: 'fastest' },
+  { v: 'medium', label: 'Medium' },
+  { v: 'high',   label: 'High',   hint: 'codex CLI default' },
+];
+
+let pickerOpenFor = null; // 'claude' | 'codex' | null
+const reasoningState = { codex: '' }; // tracked separately, applied at run start
+
+function fmtTok(n) {
+  if (!n) return '0';
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return (n / 1000).toFixed(n < 10_000 ? 2 : 1) + 'k';
+  return (n / 1_000_000).toFixed(2) + 'M';
+}
+
+function openPicker(agent) {
+  pickerOpenFor = agent;
+  const menu = el('modelMenu');
+  const list = el('mmList');
+  const reasoningCol = el('mmReasoningCol');
+  list.innerHTML = '';
+  el('mmTitle').textContent = agent === 'claude' ? 'CLAUDY · MODEL' : 'CODY · MODEL';
+  const opts = agent === 'claude' ? CLAUDE_MODELS : CODEX_MODELS;
+  const current = (agent === 'claude' ? el('modelClaude').value : el('modelCodex').value) || '';
+  let n = 1;
+  for (const opt of opts) {
+    if (opt.sep) { const s = document.createElement('div'); s.className = 'mm-sep'; list.appendChild(s); continue; }
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'mm-item';
+    if (opt.v === current) item.classList.add('on');
+    item.innerHTML =
+      `<span class="mm-check">${opt.v === current ? '✓' : ''}</span>` +
+      `<span class="mm-name">${opt.label}${opt.hint ? `<small> ${opt.hint}</small>` : ''}</span>` +
+      `<span class="mm-key">${n}</span>`;
+    item.addEventListener('click', () => choosePicker(opt.v, opt.label));
+    list.appendChild(item);
+    n++;
+  }
+  // Codex gets a reasoning-effort sub-column.
+  if (agent === 'codex') {
+    reasoningCol.classList.remove('hidden');
+    const rlist = el('mmReasoningList');
+    rlist.innerHTML = '';
+    let rn = 1;
+    for (const r of REASONING) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'mm-item';
+      const beta = el('betaMode').checked;
+      const effective = beta ? 'low' : (reasoningState.codex || 'high');
+      if (r.v === effective) item.classList.add('on');
+      item.innerHTML =
+        `<span class="mm-check">${r.v === effective ? '✓' : ''}</span>` +
+        `<span class="mm-name">${r.label}${r.hint ? `<small> ${r.hint}</small>` : ''}</span>` +
+        `<span class="mm-key">${rn}</span>`;
+      item.addEventListener('click', () => {
+        reasoningState.codex = r.v;
+        openPicker('codex'); // re-render with the new selection highlighted
+      });
+      rlist.appendChild(item);
+      rn++;
+    }
+  } else {
+    reasoningCol.classList.add('hidden');
+  }
+  // Position the menu under the triggering button.
+  const btn = el(agent === 'claude' ? 'modelClaudeBtn' : 'modelCodexBtn');
+  const r = btn.getBoundingClientRect();
+  menu.style.left = `${Math.max(12, r.left)}px`;
+  menu.style.top  = `${r.bottom + 6}px`;
+  menu.classList.remove('hidden');
+  menu.setAttribute('aria-hidden', 'false');
+}
+function choosePicker(value, label) {
+  if (!pickerOpenFor) return;
+  const inputId = pickerOpenFor === 'claude' ? 'modelClaude' : 'modelCodex';
+  const btnId   = pickerOpenFor === 'claude' ? 'modelClaudeBtn' : 'modelCodexBtn';
+  el(inputId).value = value;
+  el(btnId).querySelector('.mp-label').textContent = label || value || '(CLI default)';
+  closePicker();
+}
+function closePicker() {
+  pickerOpenFor = null;
+  el('modelMenu').classList.add('hidden');
+  el('modelMenu').setAttribute('aria-hidden', 'true');
+}
+document.addEventListener('click', (e) => {
+  if (!pickerOpenFor) return;
+  const menu = el('modelMenu');
+  if (menu.contains(e.target)) return;
+  if (e.target.closest('.model-pick')) return;
+  closePicker();
+});
+document.addEventListener('keydown', (e) => {
+  if (!pickerOpenFor) return;
+  if (e.key === 'Escape') return closePicker();
+  // 1-9 hotkeys
+  const idx = Number(e.key) - 1;
+  if (idx >= 0 && idx < 9) {
+    const items = el('mmList').querySelectorAll('.mm-item');
+    if (items[idx]) items[idx].click();
+  }
+});
+
 // Beta = lowest compute. Reflect it in the model fields so the choice is visible.
 function applyBeta() {
   const beta = el('betaMode').checked;
   document.querySelector('.beta-toggle').classList.toggle('off', !beta);
+  const mcBtn = el('modelClaudeBtn'), mxBtn = el('modelCodexBtn');
   const mc = el('modelClaude'), mx = el('modelCodex');
   if (beta) {
-    mc.value = 'haiku'; mc.disabled = true;
-    mx.value = ''; mx.placeholder = 'low reasoning effort'; mx.disabled = true;
+    mc.value = 'haiku'; mcBtn.querySelector('.mp-label').textContent = 'haiku (beta)';
+    mcBtn.disabled = true; mcBtn.classList.add('locked');
+    mx.value = ''; mxBtn.querySelector('.mp-label').textContent = '(CLI default · low reasoning)';
+    mxBtn.disabled = true; mxBtn.classList.add('locked');
   } else {
-    // Restore to a capable default if it was locked to the beta value.
-    if (mc.value === 'haiku' || !mc.value) mc.value = 'opus';
-    mc.disabled = false;
-    mx.placeholder = '(CLI default)'; mx.disabled = false;
+    if (mc.value === 'haiku' || !mc.value) { mc.value = 'opus'; mcBtn.querySelector('.mp-label').textContent = 'opus'; }
+    mcBtn.disabled = false; mcBtn.classList.remove('locked');
+    if (!mx.value) mxBtn.querySelector('.mp-label').textContent = '(CLI default)';
+    mxBtn.disabled = false; mxBtn.classList.remove('locked');
   }
-  // Update the hint line under the model row
   const hint = el('modelHint');
   if (hint) {
     hint.textContent = beta
-      ? 'U → claude-3-5-haiku  ·  Cody → low reasoning effort  ·  fastest & cheapest tier'
-      : 'Type a model alias (haiku / sonnet / opus) or a full ID (claude-sonnet-4-20250514)';
+      ? 'Claudy → haiku  ·  Cody → low reasoning effort  ·  fastest & cheapest tier'
+      : 'Tap a model name to pick from the menu. Aliases (haiku / sonnet / opus) auto-track the latest version.';
   }
 }
 
@@ -115,6 +245,8 @@ async function startRun() {
     models: beta
       ? { claude: '', codex: '' }
       : { claude: el('modelClaude').value.trim() || 'opus', codex: el('modelCodex').value.trim() },
+    // Reasoning effort override for Codex (applied per-turn on the CLI).
+    reasoningEffort: beta ? { codex: 'low' } : (reasoningState.codex ? { codex: reasoningState.codex } : {}),
     roles: collectRoles(),
   };
   const res = await fetch('/api/start', {
@@ -152,6 +284,7 @@ function appendEvent(ev) {
 }
 
 const SYSLAMP = { running: 'active', paused: 'think', done: 'done', stopped: 'idle', error: 'tool', idle: 'idle' };
+let lastStatus = 'idle';
 function setStatus(s) {
   const st = s.status || 'idle';
   el('hudStatus').textContent = st.toUpperCase();
@@ -169,11 +302,52 @@ function setStatus(s) {
     el('subU').textContent = 'claude' + (s.models.claude ? ` · ${s.models.claude}` : '');
     el('subCody').textContent = 'codex' + (s.models.codex ? ` · ${s.models.codex}` : (s.beta ? ' · low' : ''));
   }
+  // Token meters
+  if (s.tokens) {
+    el('tokU').textContent    = `${fmtTok(s.tokens.claude?.total || 0)} tok`;
+    el('tokCody').textContent = `${fmtTok(s.tokens.codex?.total || 0)} tok`;
+    el('tokGrand').textContent = fmtTok(s.tokens.grand || 0);
+  }
   const paused = st === 'paused';
   el('pauseBtn').textContent = paused ? 'RESUME' : 'HOLD';
   el('pauseBtn').dataset.paused = paused ? '1' : '';
   renderTimeline(s);
   window.Cockpit && window.Cockpit.onStatus(s);
+
+  // When the run transitions to a terminal state, pop the completion modal.
+  const wasActive = lastStatus === 'running' || lastStatus === 'paused';
+  if (wasActive && (st === 'done' || st === 'stopped' || st === 'error')) {
+    showDoneModal(s);
+  }
+  // Hide the modal again the moment a new run starts.
+  if (st === 'running' && lastStatus !== 'running') hideDoneModal();
+  lastStatus = st;
+}
+
+// ---------------------------------------------------------------- done modal
+function showDoneModal(s) {
+  const dm = el('doneModal');
+  const title = el('dmTitle');
+  if (s.status === 'done')   title.textContent = '▰▰▰  MISSION COMPLETE  ▰▰▰';
+  if (s.status === 'stopped') title.textContent = '✕  RUN ABORTED';
+  if (s.status === 'error')  title.textContent = '⚠  ERROR · RUN HALTED';
+  const t = s.tokens || {};
+  el('dmSummary').innerHTML =
+    `<div class="dm-row"><span>turns</span><b>${s.turnCount}/${s.maxRounds}</b></div>` +
+    `<div class="dm-row"><span>Claudy</span><b>${fmtTok(t.claude?.total || 0)} tok</b></div>` +
+    `<div class="dm-row"><span>Cody</span><b>${fmtTok(t.codex?.total || 0)} tok</b></div>` +
+    `<div class="dm-row total"><span>total</span><b>${fmtTok(t.grand || 0)} tok</b></div>`;
+  dm.classList.remove('hidden');
+}
+function hideDoneModal() { el('doneModal').classList.add('hidden'); }
+async function extendRun() {
+  const n = Math.max(1, Number(el('extendTurns').value) || 4);
+  const res = await fetch('/api/extend', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ turns: n }),
+  }).then((r) => r.json()).catch(() => ({ ok: false }));
+  if (res.ok) hideDoneModal();
+  else addLog(`extend failed: ${res.error || 'unknown'}`);
 }
 
 let knownTurns = [];
@@ -269,6 +443,15 @@ el('newBtn').onclick = () => {
 };
 
 el('betaMode').addEventListener('change', applyBeta);
+
+// Model picker buttons
+el('modelClaudeBtn').addEventListener('click', (e) => { e.stopPropagation(); openPicker('claude'); });
+el('modelCodexBtn').addEventListener('click',  (e) => { e.stopPropagation(); openPicker('codex');  });
+
+// Completion modal
+el('extendBtn').addEventListener('click', extendRun);
+el('dmCloseBtn').addEventListener('click', hideDoneModal);
+el('extendTurns').addEventListener('keydown', (e) => { if (e.key === 'Enter') extendRun(); });
 
 // ---------------------------------------------------------------- boot
 loadModes();

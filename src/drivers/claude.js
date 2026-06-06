@@ -78,6 +78,15 @@ export const claudeDriver = {
             if (obj.session_id) capturedSession = obj.session_id;
             finalText = obj.result || finalText;
             ok = !obj.is_error;
+            // Surface token usage for the dashboard token meter.
+            if (obj.usage) {
+              const u = obj.usage;
+              const input = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+              const output = u.output_tokens || 0;
+              const cached = u.cache_read_input_tokens || 0;
+              emit('usage', `${input + output} tok · in ${input} · out ${output}${cached ? ` · cache ${cached}` : ''}`,
+                { input, output, cached, total: input + output });
+            }
             emit('result', finalText, obj);
             break;
           case 'rate_limit_event':

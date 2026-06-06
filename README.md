@@ -5,7 +5,7 @@ single shared task (a repo/folder/program). You pick **how** they collaborate, g
 hit Start, and watch both agents work in real time — side by side — editing the same git-tracked
 workspace.
 
-The UI is a **vintage-spaceship flight deck**: the two agents are CRT terminals — **U** (Claude,
+The UI is a **vintage-spaceship flight deck**: the two agents are CRT terminals — **Claudy** (Claude,
 amber phosphor) and **Cody** (Codex, teal phosphor) — embedded in a tilted amber console, framed by
 LED-dot walls, a hexagonal ceiling dome, and a starfield viewport that jumps to hyperspace whenever
 an agent is working. There's a power-up boot sequence, reactive telemetry lamps/gauges, and a

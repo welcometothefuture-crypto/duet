@@ -26,11 +26,12 @@ export class Orchestrator extends EventEmitter {
 
   get state() {
     if (!this.run) return { status: 'idle' };
-    const { id, mode, task, status, maxRounds, models, roles, workspace, turns, beta } = this.run;
+    const { id, mode, task, status, maxRounds, models, roles, workspace, turns, beta, tokens } = this.run;
     return {
       status, id, mode, task, maxRounds, models, roles, workspace, beta,
       turnCount: turns.length,
       currentAgent: this.run.currentAgent || null,
+      tokens, // { claude:{input,output,cached,total}, codex:{...}, grand }
     };
   }
 
@@ -73,7 +74,10 @@ export class Orchestrator extends EventEmitter {
         codex: config.models?.codex || '',
       },
       // Codex has no model swap here; lower its compute via reasoning effort instead.
-      reasoningEffort: { codex: beta ? 'low' : null },
+      // Beta forces 'low'. Otherwise the user can pass an explicit choice; null = CLI default.
+      reasoningEffort: {
+        codex: beta ? 'low' : (config.reasoningEffort?.codex || null),
+      },
       roles: { ...defaultRoles(mode), ...(config.roles || {}) },
       sessions: { claude: null, codex: null },
       status: 'running',
@@ -82,6 +86,13 @@ export class Orchestrator extends EventEmitter {
       pendingInjects: [],
       scratch: {},
       currentAgent: null,
+      // Running token totals. Each driver emits a 'usage' event with raw {input,output,cached,total}
+      // that we accumulate here so the dashboard meter can show live spend.
+      tokens: {
+        claude: { input: 0, output: 0, cached: 0, total: 0 },
+        codex:  { input: 0, output: 0, cached: 0, total: 0 },
+        grand:  0,
+      },
     };
     this.run = run;
 
@@ -104,7 +115,10 @@ export class Orchestrator extends EventEmitter {
   async _loop() {
     const run = this.run;
     const mode = MODES[run.mode];
-    let agent = mode.firstAgent(run);
+    // If turns already exist (e.g. extending a finished run), continue from the
+    // agent who would have gone next; otherwise start with the mode's first agent.
+    const lastTurn = run.turns[run.turns.length - 1];
+    let agent = lastTurn ? mode.nextAgent(run, lastTurn.agent) : mode.firstAgent(run);
 
     while (run.status === 'running' && run.turns.length < run.maxRounds) {
       await this._waitIfPaused();
@@ -164,6 +178,16 @@ export class Orchestrator extends EventEmitter {
     if (!this.run) return;
     this.run.events.push(ev);
     if (this.run.events.length > 5000) this.run.events.splice(0, 1000);
+    // Accumulate token usage from driver 'usage' events.
+    if (ev.kind === 'usage' && ev.raw && this.run.tokens[ev.agent]) {
+      const t = this.run.tokens[ev.agent];
+      t.input  += ev.raw.input  || 0;
+      t.output += ev.raw.output || 0;
+      t.cached += ev.raw.cached || 0;
+      t.total  += ev.raw.total  || 0;
+      this.run.tokens.grand = this.run.tokens.claude.total + this.run.tokens.codex.total;
+      this.emit('state', this.state);
+    }
     this.emit('event', ev);
   }
 
@@ -201,6 +225,30 @@ export class Orchestrator extends EventEmitter {
     }
     this.emit('state', this.state);
     this.emit('log', 'Stopped by operator.');
+  }
+
+  /**
+   * Add more turns to a finished run and re-kick the loop. The session ids
+   * are preserved so each agent picks up exactly where it left off, with
+   * COLLAB.md and git history intact.
+   */
+  extend(extraTurns) {
+    if (!this.run) throw new Error('No run to extend.');
+    if (this.run.status === 'running' || this.run.status === 'paused') {
+      throw new Error('Run is still in progress.');
+    }
+    const n = Math.max(1, Math.floor(Number(extraTurns) || 0));
+    this.run.maxRounds = this.run.turns.length + n;
+    this.run.status = 'running';
+    this.emit('state', this.state);
+    this.emit('log', `Extending run by ${n} turn${n === 1 ? '' : 's'} (new budget: ${this.run.maxRounds}).`);
+    this._loop().catch((err) => {
+      this.emit('log', `Loop error: ${err.stack || err}`);
+      this.run.status = 'error';
+      this._persist();
+      this.emit('state', this.state);
+    });
+    return { ok: true, maxRounds: this.run.maxRounds };
   }
 
   _waitIfPaused() {
@@ -263,6 +311,7 @@ export class Orchestrator extends EventEmitter {
       roles: this.run.roles,
       status: this.run.status,
       maxRounds: this.run.maxRounds,
+      tokens: this.run.tokens,
       turns: this.run.turns.map((t) => ({ n: t.n, agent: t.agent, output: t.output, ts: t.ts })),
     };
     fs.writeFileSync(path.join(dir, 'transcript.json'), JSON.stringify(data, null, 2));

@@ -100,6 +100,16 @@ export const codexDriver = {
             break;
           }
           case 'turn.completed':
+            // Codex includes a usage block on turn completion — surface it for the meter.
+            if (obj.usage) {
+              const u = obj.usage;
+              const input = u.input_tokens || u.prompt_tokens || 0;
+              const output = u.output_tokens || u.completion_tokens || 0;
+              const cached = u.cached_input_tokens || u.cache_read_input_tokens || 0;
+              const total = u.total_tokens || (input + output);
+              emit('usage', `${total} tok · in ${input} · out ${output}${cached ? ` · cache ${cached}` : ''}`,
+                { input, output, cached, total });
+            }
             emit('result', finalText, obj);
             break;
           case 'turn.failed':

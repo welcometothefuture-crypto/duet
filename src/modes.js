@@ -23,8 +23,29 @@ function lastFrom(run, agent) {
   return null;
 }
 
+/**
+ * Strict sentinel detection — fixes the bug where an agent EXPLAINING
+ * a sentinel ("I'm not emitting [[DONE]]") was accidentally terminating the run.
+ *
+ * Rule: the sentinel must appear on a line by itself (only whitespace/markdown
+ * punctuation around it). This matches the prompt's instruction
+ * ("end your final message with [[DONE]] on its own line") and refuses every
+ * inline reference — promises, negations, quotes of the protocol, etc.
+ * Callers ALSO require that both agents have spoken at least once.
+ */
 function hasSentinel(turn, token) {
-  return !!turn && typeof turn.output === 'string' && turn.output.includes(token);
+  if (!turn || typeof turn.output !== 'string') return false;
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(
+    `(^|\\n)[\\s>*_\`~\\-]*${escaped}[\\s.!?>*_\`~\\-]*(\\n|$)`,
+    'i',
+  );
+  return pattern.test(turn.output);
+}
+
+function bothAgentsSpoke(run) {
+  const set = new Set(run.turns.map((t) => t.agent));
+  return set.has('claude') && set.has('codex');
 }
 
 // Shared protocol text every agent sees, so the two coordinate through files + handoff notes.
@@ -56,6 +77,21 @@ function peerHandoff(run, agent) {
   return `\n\n${NAMES[other(agent)]}'s latest handoff message:\n"""\n${peerTurn.output || '(no message)'}\n"""\n`;
 }
 
+/** Tell the agent where it sits in the turn budget so it can pace itself. */
+function turnBudget(run) {
+  const used = run.turns.length;
+  const next = used + 1;
+  const total = run.maxRounds;
+  const remaining = Math.max(0, total - next);
+  return [
+    ``,
+    `TURN BUDGET: this is turn ${next} of ${total} (${remaining} more turn${remaining === 1 ? '' : 's'} after yours).`,
+    `Pace your work accordingly. Do NOT prematurely emit [[DONE]] just to end early — only emit it on a line by itself, ` +
+      `and only when the entire task is genuinely complete and verified end-to-end.`,
+    ``,
+  ].join('\n');
+}
+
 export const MODES = {
   // ---------------------------------------------------------------- Peers
   peers: {
@@ -69,17 +105,18 @@ export const MODES = {
     firstAgent: (run) => run.roles.first || 'claude',
     nextAgent: (run, last) => other(last),
     isDone: (run, lastTurn) =>
-      hasSentinel(lastTurn, '[[DONE]]') || run.turns.length >= run.maxRounds,
+      (bothAgentsSpoke(run) && hasSentinel(lastTurn, '[[DONE]]')) ||
+      run.turns.length >= run.maxRounds,
     buildPrompt(run, agent) {
       const first = run.turns.length === 0;
       return [
         protocol(run, agent),
-        ``,
+        turnBudget(run),
         `THE TASK:\n${run.task}`,
         first
           ? `\nYou are starting. Kick off the project: set up structure and implement a first working slice, then hand off.`
           : `\nContinue the project. Build the next meaningful increment, then hand off.`,
-        `\nWhen you are confident the ENTIRE task is complete and verified, include the token [[DONE]] in your final message.`,
+        `\nWhen — and only when — you are confident the ENTIRE task is complete and verified, end your final message with [[DONE]] on its own line.`,
         peerHandoff(run, agent),
         injectedNotes(run),
       ].join('\n');
@@ -100,7 +137,9 @@ export const MODES = {
     isDone: (run, lastTurn) => {
       const reviewer = other(run.roles.builder || 'claude');
       return (
-        (lastTurn?.agent === reviewer && hasSentinel(lastTurn, '[[APPROVED]]')) ||
+        (bothAgentsSpoke(run) &&
+          lastTurn?.agent === reviewer &&
+          hasSentinel(lastTurn, '[[APPROVED]]')) ||
         run.turns.length >= run.maxRounds
       );
     },
@@ -108,7 +147,7 @@ export const MODES = {
       const builder = run.roles.builder || 'claude';
       const isBuilder = agent === builder;
       const first = run.turns.length === 0;
-      const head = [protocol(run, agent), ``, `THE TASK:\n${run.task}`, ``];
+      const head = [protocol(run, agent), turnBudget(run), `THE TASK:\n${run.task}`, ``];
       if (isBuilder) {
         head.push(
           `Your ROLE: BUILDER. Implement the work in real files.`,
@@ -119,7 +158,7 @@ export const MODES = {
       } else {
         head.push(
           `Your ROLE: REVIEWER. Do NOT rewrite the whole thing. Read the builder's code, actually run/test it, and write precise, actionable feedback (bugs, gaps, style). You may make small fixes.`,
-          `If — and only if — the implementation fully satisfies the task and you have verified it works, include the token [[APPROVED]] in your final message.`,
+          `If — and only if — the implementation fully satisfies the task and you have verified it works end-to-end, end your final message with [[APPROVED]] on its own line.`,
         );
       }
       return [...head, peerHandoff(run, agent), injectedNotes(run)].join('\n');
@@ -138,11 +177,12 @@ export const MODES = {
     firstAgent: (run) => run.roles.manager || 'claude',
     nextAgent: (run, last) => other(last),
     isDone: (run, lastTurn) =>
-      hasSentinel(lastTurn, '[[DONE]]') || run.turns.length >= run.maxRounds,
+      (bothAgentsSpoke(run) && hasSentinel(lastTurn, '[[DONE]]')) ||
+      run.turns.length >= run.maxRounds,
     buildPrompt(run, agent) {
       const manager = run.roles.manager || 'claude';
       const isManagerOpening = run.turns.length === 0 && agent === manager;
-      const head = [protocol(run, agent), ``, `THE TASK:\n${run.task}`, ``];
+      const head = [protocol(run, agent), turnBudget(run), `THE TASK:\n${run.task}`, ``];
       if (isManagerOpening) {
         head.push(
           `Your ROLE this turn: MANAGER / PLANNER. Decompose the task into a concrete, ordered checklist of work items and write it into COLLAB.md as a markdown task list ("- [ ] item"). Optionally start the first item. Then hand off.`,
@@ -150,7 +190,7 @@ export const MODES = {
       } else {
         head.push(
           `Pick the NEXT unchecked item(s) from the COLLAB.md checklist that you can do now, implement them in real files, verify, and mark them "- [x]" in COLLAB.md. Update the checklist if you discover new work.`,
-          `When EVERY item is checked and the task is verified end-to-end, include the token [[DONE]] in your final message.`,
+          `When EVERY item is checked and the task is verified end-to-end, end your final message with [[DONE]] on its own line.`,
         );
       }
       return [...head, peerHandoff(run, agent), injectedNotes(run)].join('\n');
@@ -170,11 +210,12 @@ export const MODES = {
     firstAgent: (run) => run.roles.first || 'claude',
     nextAgent: (run, last) => other(last),
     isDone: (run, lastTurn) =>
-      hasSentinel(lastTurn, '[[DONE]]') || run.turns.length >= run.maxRounds,
+      (bothAgentsSpoke(run) && hasSentinel(lastTurn, '[[DONE]]')) ||
+      run.turns.length >= run.maxRounds,
     buildPrompt(run, agent) {
       const debateTurns = (Number(run.roles.debateRounds) || 2) * 2; // each round = both speak
       const inDebate = run.turns.length < debateTurns;
-      const head = [protocol(run, agent), ``, `THE TASK:\n${run.task}`, ``];
+      const head = [protocol(run, agent), turnBudget(run), `THE TASK:\n${run.task}`, ``];
       if (inDebate) {
         head.push(
           `PHASE: DEBATE (no implementation yet). Propose your approach and architecture for this task. Critique the trade-offs in ${NAMES[other(agent)]}'s proposal below. Move toward a shared decision. Record the evolving agreed plan in COLLAB.md under "## Agreed Plan".`,
@@ -186,7 +227,7 @@ export const MODES = {
           justEntered
             ? `Begin implementation of your share of the agreed plan in real files, then hand off.`
             : `Continue implementing the agreed plan, building on ${NAMES[other(agent)]}'s work.`,
-          `When the whole task is implemented and verified, include the token [[DONE]] in your final message.`,
+          `When the whole task is implemented and verified, end your final message with [[DONE]] on its own line.`,
         );
       }
       return [...head, peerHandoff(run, agent), injectedNotes(run)].join('\n');

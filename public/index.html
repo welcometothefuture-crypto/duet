@@ -61,6 +61,7 @@
         <span id="hudTurn" class="hud-turn"></span>
       </div>
       <div class="hud-right">
+        <span id="hudTokens" class="chip tok-chip" title="Total tokens spent this run">⛽ <b id="tokGrand">0</b> tok</span>
         <button id="soundBtn" class="chip" title="Toggle ambient sound">♪ SND <b id="sndState">OFF</b></button>
       </div>
     </header>
@@ -84,7 +85,7 @@
               <input type="checkbox" id="betaMode" checked />
               <span class="bt-text">
                 <span class="bt-title">⚡ BETA MODE <span class="bt-badge">DEFAULT</span></span>
-                <small>Lowest compute for fast, cheap recon — U <b>haiku</b> · Cody <b>low</b> effort. Disengage for full power.</small>
+                <small>Lowest compute for fast, cheap recon — Claudy <b>haiku</b> · Cody <b>low</b> effort. Disengage for full power.</small>
               </span>
             </label>
 
@@ -98,37 +99,23 @@
 
             <div class="field-row">
               <label class="field">
-                <span>U MODEL</span>
-                <input id="modelClaude" type="text" value="opus" list="claudeModels" autocomplete="off" />
+                <span>CLAUDY MODEL</span>
+                <button id="modelClaudeBtn" type="button" class="model-pick" data-model-for="claude">
+                  <span class="mp-label">opus</span><span class="mp-caret">▾</span>
+                </button>
+                <input id="modelClaude" type="hidden" value="opus" />
               </label>
               <label class="field">
                 <span>CODY MODEL</span>
-                <input id="modelCodex" type="text" value="" placeholder="(CLI default)" list="codexModels" autocomplete="off" />
+                <button id="modelCodexBtn" type="button" class="model-pick" data-model-for="codex">
+                  <span class="mp-label">(CLI default)</span><span class="mp-caret">▾</span>
+                </button>
+                <input id="modelCodex" type="hidden" value="" />
               </label>
               <label class="field narrow"><span>MAX TURNS</span><input id="maxRounds" type="number" value="8" min="1" max="40" /></label>
             </div>
 
-            <p id="modelHint" class="field-hint">Type a model alias (haiku / sonnet / opus) or a full ID (claude-sonnet-4-20250514)</p>
-
-            <!-- Claude model suggestions (aliases auto-track latest) -->
-            <datalist id="claudeModels">
-              <option value="haiku"></option>
-              <option value="sonnet"></option>
-              <option value="opus"></option>
-              <option value="claude-3-5-haiku-20241022"></option>
-              <option value="claude-3-5-sonnet-20241022"></option>
-              <option value="claude-3-7-sonnet-20250219"></option>
-              <option value="claude-sonnet-4-20250514"></option>
-              <option value="claude-opus-4-20250514"></option>
-            </datalist>
-
-            <!-- Codex CLI model suggestions -->
-            <datalist id="codexModels">
-              <option value="codex-mini-latest"></option>
-              <option value="o4-mini"></option>
-              <option value="o3"></option>
-              <option value="gpt-4o"></option>
-            </datalist>
+            <p id="modelHint" class="field-hint">Tap a model name to pick from the menu. Aliases (haiku / sonnet / opus) auto-track the latest version.</p>
           </div>
         </div>
 
@@ -159,13 +146,14 @@
         </div>
 
         <div class="deck">
-          <!-- U terminal -->
+          <!-- Claudy terminal -->
           <div class="terminal u" id="termU">
             <div class="term-head">
               <span class="lamp agent" id="lampU"></span>
-              <span class="term-name">U</span>
+              <span class="term-name">CLAUDY</span>
               <span class="term-sub" id="subU">claude</span>
               <span class="term-act" id="actU">STANDBY</span>
+              <span class="term-tok" id="tokU" title="Token usage">0 tok</span>
             </div>
             <div id="streamClaude" class="screen"></div>
             <div class="term-foot"><span class="rivets"></span></div>
@@ -198,12 +186,45 @@
               <span class="term-name">CODY</span>
               <span class="term-sub" id="subCody">codex</span>
               <span class="term-act" id="actCody">STANDBY</span>
+              <span class="term-tok" id="tokCody" title="Token usage">0 tok</span>
             </div>
             <div id="streamCodex" class="screen"></div>
             <div class="term-foot"><span class="rivets"></span></div>
           </div>
         </div>
       </section>
+    </div>
+  </div>
+
+  <!-- ====================== MODEL PICKER PANEL ====================== -->
+  <div id="modelMenu" class="model-menu hidden" role="menu" aria-hidden="true">
+    <div class="mm-cols">
+      <div class="mm-col" id="mmModels">
+        <div class="mm-head"><span id="mmTitle">MODELS</span><span class="mm-hint">↑↓ · ⏎</span></div>
+        <div class="mm-list" id="mmList"></div>
+      </div>
+      <div class="mm-col mm-reasoning" id="mmReasoningCol">
+        <div class="mm-head"><span>REASONING</span></div>
+        <div class="mm-list" id="mmReasoningList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================== COMPLETION / EXTEND MODAL =================== -->
+  <div id="doneModal" class="done-modal hidden" role="dialog" aria-labelledby="dmTitle">
+    <div class="dm-panel">
+      <div class="dm-stripe"></div>
+      <h2 id="dmTitle" class="dm-title">▰▰▰  MISSION COMPLETE  ▰▰▰</h2>
+      <div class="dm-summary" id="dmSummary"></div>
+      <div class="dm-extend">
+        <span class="dm-q">EXTEND COLLABORATION?</span>
+        <div class="dm-controls">
+          <label class="dm-num"><span>more turns</span>
+            <input id="extendTurns" type="number" value="4" min="1" max="40" /></label>
+          <button id="extendBtn" class="dm-go">▶ CONTINUE</button>
+          <button id="dmCloseBtn" class="dm-no">CLOSE</button>
+        </div>
+      </div>
     </div>
   </div>
 

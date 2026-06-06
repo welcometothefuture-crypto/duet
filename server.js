@@ -61,6 +61,15 @@ app.post('/api/inject', (req, res) => {
   orch.inject((req.body && req.body.text) || '');
   res.json({ ok: true });
 });
+app.post('/api/extend', (req, res) => {
+  try {
+    const extra = Number((req.body && req.body.turns) || 0);
+    const out = orch.extend(extra);
+    res.json(out);
+  } catch (err) {
+    res.status(400).json({ ok: false, error: String(err.message || err) });
+  }
+});
 
 server.listen(PORT, () => {
   console.log(`\n  Duet dashboard → http://localhost:${PORT}\n`);
