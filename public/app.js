@@ -80,24 +80,19 @@ function collectRoles() {
 // ---------------------------------------------------------------- model picker
 // Custom dropdown styled like the Claude Code / Codex selectors. Click the
 // styled button to open a floating menu; click an option to set the hidden input.
+// Standard 200k-context options only. The 1M-context Opus variants are
+// deliberately excluded — they burn through tokens 5x faster and are easy
+// to pick by accident. Sonnet is the default: capable but not ruinous.
 const CLAUDE_MODELS = [
-  { v: 'opus',   label: 'Opus (latest)',    hint: 'most capable' },
-  { v: 'sonnet', label: 'Sonnet (latest)',  hint: 'balanced default' },
-  { v: 'haiku',  label: 'Haiku (latest)',   hint: 'fastest & cheapest' },
-  { sep: true },
-  { v: 'claude-opus-4-20250514',    label: 'claude-opus-4-20250514',    hint: 'pinned' },
-  { v: 'claude-sonnet-4-20250514',  label: 'claude-sonnet-4-20250514',  hint: 'pinned' },
-  { v: 'claude-3-7-sonnet-20250219',label: 'claude-3-7-sonnet',         hint: 'legacy' },
-  { v: 'claude-3-5-sonnet-20241022',label: 'claude-3-5-sonnet',         hint: 'legacy' },
-  { v: 'claude-3-5-haiku-20241022', label: 'claude-3-5-haiku',          hint: 'legacy' },
+  { v: 'sonnet', label: 'Sonnet (latest)',  hint: 'balanced · DEFAULT · 200k ctx' },
+  { v: 'haiku',  label: 'Haiku (latest)',   hint: 'fastest & cheapest · 200k ctx' },
+  { v: 'opus',   label: 'Opus (latest)',    hint: 'most capable · 200k ctx · pricey' },
 ];
-// All ChatGPT-account compatible. API-only models (gpt-5-codex, o3, gpt-4o)
-// are intentionally excluded — they error out for users on the standard
-// ChatGPT login flow, which is most people.
+// Cody is locked to the Codex CLI's own default. Other model ids either
+// require API-key auth (gpt-5-codex / o3 / gpt-4o) or have hit availability
+// issues on ChatGPT-account auth — the CLI default always works.
 const CODEX_MODELS = [
-  { v: 'codex-mini-latest', label: 'codex-mini-latest', hint: 'fast · code-tuned · DEFAULT' },
-  { v: '',                  label: '(CLI default)',     hint: 'let codex pick for your tier' },
-  { v: 'o4-mini',           label: 'o4-mini',           hint: 'reasoning · light' },
+  { v: '', label: '(CLI default)', hint: 'whatever codex selects · only safe option' },
 ];
 const REASONING = [
   { v: 'low',    label: 'Low',    hint: 'fastest' },
@@ -211,23 +206,22 @@ function applyBeta() {
   document.querySelector('.beta-toggle').classList.toggle('off', !beta);
   const mcBtn = el('modelClaudeBtn'), mxBtn = el('modelCodexBtn');
   const mc = el('modelClaude'), mx = el('modelCodex');
+  // Cody is always (CLI default) — leave it alone. Only toggle Claudy + reasoning hint.
+  mx.value = '';
+  mxBtn.querySelector('.mp-label').textContent =
+    beta ? '(CLI default · low reasoning)' : '(CLI default)';
   if (beta) {
     mc.value = 'haiku'; mcBtn.querySelector('.mp-label').textContent = 'haiku (beta)';
     mcBtn.disabled = true; mcBtn.classList.add('locked');
-    mx.value = ''; mxBtn.querySelector('.mp-label').textContent = '(CLI default · low reasoning)';
-    mxBtn.disabled = true; mxBtn.classList.add('locked');
   } else {
-    if (mc.value === 'haiku' || !mc.value) { mc.value = 'opus'; mcBtn.querySelector('.mp-label').textContent = 'opus'; }
+    if (mc.value === 'haiku' || !mc.value) { mc.value = 'sonnet'; mcBtn.querySelector('.mp-label').textContent = 'sonnet'; }
     mcBtn.disabled = false; mcBtn.classList.remove('locked');
-    // Restore the sensible default when leaving beta — fast, code-tuned, works on ChatGPT auth.
-    if (!mx.value) { mx.value = 'codex-mini-latest'; mxBtn.querySelector('.mp-label').textContent = 'codex-mini-latest'; }
-    mxBtn.disabled = false; mxBtn.classList.remove('locked');
   }
   const hint = el('modelHint');
   if (hint) {
     hint.textContent = beta
       ? 'Claudy → haiku  ·  Cody → low reasoning effort  ·  fastest & cheapest tier'
-      : 'Tap a model name to pick from the menu. Aliases (haiku / sonnet / opus) auto-track the latest version.';
+      : 'Sonnet is the default — balanced and cost-safe. Aliases auto-track the latest standard (200k context) version. Cody uses your Codex CLI default.';
   }
 }
 
@@ -446,8 +440,14 @@ el('newBtn').onclick = () => {
 el('betaMode').addEventListener('change', applyBeta);
 
 // Model picker buttons
-el('modelClaudeBtn').addEventListener('click', (e) => { e.stopPropagation(); openPicker('claude'); });
-el('modelCodexBtn').addEventListener('click',  (e) => { e.stopPropagation(); openPicker('codex');  });
+el('modelClaudeBtn').addEventListener('click', (e) => {
+  if (e.currentTarget.disabled) return;
+  e.stopPropagation(); openPicker('claude');
+});
+el('modelCodexBtn').addEventListener('click', (e) => {
+  if (e.currentTarget.disabled) return;  // Cody is permanently locked
+  e.stopPropagation(); openPicker('codex');
+});
 
 // Completion modal
 el('extendBtn').addEventListener('click', extendRun);
