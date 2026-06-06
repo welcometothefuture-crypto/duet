@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DUET · Flight Deck</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&family=VT323&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- deep-space backdrop -->
+  <canvas id="starfield"></canvas>
+
+  <!-- ============================ BOOT ============================ -->
+  <div id="boot" class="boot">
+    <div class="boot-inner">
+      <pre id="bootLog" class="boot-log"></pre>
+      <div class="boot-bar"><div id="bootFill" class="boot-fill"></div></div>
+      <div class="boot-hint">▸ click to skip</div>
+    </div>
+  </div>
+
+  <!-- =========================== COCKPIT =========================== -->
+  <div class="cockpit" id="cockpit">
+
+    <!-- ceiling dome -->
+    <div class="ceiling">
+      <div class="dome">
+        <div class="dome-core"></div>
+        <div class="led-field" data-rows="6" data-cols="34"></div>
+      </div>
+      <div class="ceiling-rib left"></div>
+      <div class="ceiling-rib right"></div>
+    </div>
+
+    <!-- side walls of perforated panels -->
+    <div class="wall wall-left">
+      <div class="led-field wallgrid" data-rows="10" data-cols="9"></div>
+      <div class="readout"><span class="ro-label">PORT</span><span class="ro-val" data-meter></span></div>
+    </div>
+    <div class="wall wall-right">
+      <div class="led-field wallgrid" data-rows="10" data-cols="9"></div>
+      <div class="readout"><span class="ro-label">STBD</span><span class="ro-val" data-meter></span></div>
+    </div>
+
+    <!-- forward viewport (starfield shows through) -->
+    <div class="viewport">
+      <div class="vp-mullion v"></div>
+      <div class="vp-mullion h"></div>
+      <div class="vp-glow" id="vpGlow"></div>
+    </div>
+
+    <!-- top HUD bar -->
+    <header class="hud">
+      <div class="hud-brand">DUET<span>flight deck</span></div>
+      <div class="hud-status">
+        <span class="lamp" id="lampSys"></span>
+        <span id="hudStatus" class="hud-stat">IDLE</span>
+        <span id="hudTurn" class="hud-turn"></span>
+      </div>
+      <div class="hud-right">
+        <button id="soundBtn" class="chip" title="Toggle ambient sound">♪ SND <b id="sndState">OFF</b></button>
+      </div>
+    </header>
+
+    <!-- main console deck (tilted) -->
+    <div class="console">
+      <div class="console-lip"></div>
+
+      <!-- ---------------- SETUP / MISSION CONFIG ---------------- -->
+      <section id="setup" class="deck-screen">
+        <div class="cfg">
+          <div class="cfg-col">
+            <h2 class="sect">◢ COLLAB PROTOCOL</h2>
+            <div id="modeList" class="mode-list"></div>
+          </div>
+
+          <div class="cfg-col">
+            <h2 class="sect">◢ FLIGHT CONFIG</h2>
+
+            <label class="beta-toggle" id="betaToggle">
+              <input type="checkbox" id="betaMode" checked />
+              <span class="bt-text">
+                <span class="bt-title">⚡ BETA MODE <span class="bt-badge">DEFAULT</span></span>
+                <small>Lowest compute for fast, cheap recon — U <b>haiku</b> · Cody <b>low</b> effort. Disengage for full power.</small>
+              </span>
+            </label>
+
+            <div id="roleFields" class="fields"></div>
+
+            <label class="field">
+              <span>WORKSPACE</span>
+              <input id="workspace" type="text" value="./workspace" />
+              <small>Shared git-tracked hold both agents edit.</small>
+            </label>
+
+            <div class="field-row">
+              <label class="field">
+                <span>U MODEL</span>
+                <input id="modelClaude" type="text" value="opus" list="claudeModels" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span>CODY MODEL</span>
+                <input id="modelCodex" type="text" value="" placeholder="(CLI default)" list="codexModels" autocomplete="off" />
+              </label>
+              <label class="field narrow"><span>MAX TURNS</span><input id="maxRounds" type="number" value="8" min="1" max="40" /></label>
+            </div>
+
+            <p id="modelHint" class="field-hint">Type a model alias (haiku / sonnet / opus) or a full ID (claude-sonnet-4-20250514)</p>
+
+            <!-- Claude model suggestions (aliases auto-track latest) -->
+            <datalist id="claudeModels">
+              <option value="haiku"></option>
+              <option value="sonnet"></option>
+              <option value="opus"></option>
+              <option value="claude-3-5-haiku-20241022"></option>
+              <option value="claude-3-5-sonnet-20241022"></option>
+              <option value="claude-3-7-sonnet-20250219"></option>
+              <option value="claude-sonnet-4-20250514"></option>
+              <option value="claude-opus-4-20250514"></option>
+            </datalist>
+
+            <!-- Codex CLI model suggestions -->
+            <datalist id="codexModels">
+              <option value="codex-mini-latest"></option>
+              <option value="o4-mini"></option>
+              <option value="o3"></option>
+              <option value="gpt-4o"></option>
+            </datalist>
+          </div>
+        </div>
+
+        <div class="cfg-task">
+          <h2 class="sect">◢ MISSION</h2>
+          <textarea id="task" rows="3" placeholder="e.g. Build a CLI tic-tac-toe in Python with an unbeatable AI and tests."></textarea>
+          <div class="launch-row">
+            <button id="startBtn" class="launch">▶ ENGAGE</button>
+            <span class="warn">⚠ Agents run autonomously inside the workspace. Every turn is committed.</span>
+          </div>
+          <div id="startErr" class="err"></div>
+        </div>
+      </section>
+
+      <!-- --------------------- RUN / FLIGHT --------------------- -->
+      <section id="run" class="deck-screen hidden">
+        <div class="run-bar">
+          <span id="runMode" class="ticket"></span>
+          <span id="runTurn" class="ticket dim"></span>
+          <span id="runTask" class="run-task"></span>
+          <div class="run-ctrl">
+            <input id="injectText" type="text" placeholder="transmit a note to next turn…" />
+            <button id="injectBtn" class="switch">TX</button>
+            <button id="pauseBtn" class="switch">HOLD</button>
+            <button id="stopBtn" class="switch danger">ABORT</button>
+            <button id="newBtn" class="switch">NEW</button>
+          </div>
+        </div>
+
+        <div class="deck">
+          <!-- U terminal -->
+          <div class="terminal u" id="termU">
+            <div class="term-head">
+              <span class="lamp agent" id="lampU"></span>
+              <span class="term-name">U</span>
+              <span class="term-sub" id="subU">claude</span>
+              <span class="term-act" id="actU">STANDBY</span>
+            </div>
+            <div id="streamClaude" class="screen"></div>
+            <div class="term-foot"><span class="rivets"></span></div>
+          </div>
+
+          <!-- central instrument stack -->
+          <div class="center-stack">
+            <div class="gauge-bank">
+              <div class="gauge" id="gaugeTurns"><div class="g-dial"><div class="g-needle"></div></div><span class="g-cap">TURNS</span></div>
+              <div class="gauge" id="gaugeAct"><div class="g-bars"><i></i><i></i><i></i><i></i><i></i></div><span class="g-cap">ACTIVITY</span></div>
+            </div>
+            <div class="instr">
+              <div class="instr-head">◢ FLIGHT LOG</div>
+              <div id="timeline" class="timeline"></div>
+            </div>
+            <div class="instr grow">
+              <div class="instr-head">◢ HOLD · git</div>
+              <pre id="repoLog" class="repo"></pre>
+            </div>
+            <div class="instr">
+              <div class="instr-head">◢ COMMS</div>
+              <div id="logFeed" class="logfeed"></div>
+            </div>
+          </div>
+
+          <!-- Cody terminal -->
+          <div class="terminal cody" id="termCody">
+            <div class="term-head">
+              <span class="lamp agent" id="lampCody"></span>
+              <span class="term-name">CODY</span>
+              <span class="term-sub" id="subCody">codex</span>
+              <span class="term-act" id="actCody">STANDBY</span>
+            </div>
+            <div id="streamCodex" class="screen"></div>
+            <div class="term-foot"><span class="rivets"></span></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="cockpit.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

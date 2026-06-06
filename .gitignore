@@ -1,0 +1,19 @@
+# dependencies
+node_modules/
+
+# per-run transcripts & agent-generated workspace files
+runs/
+workspace/
+
+# environment / secrets
+.env
+.env.*
+
+# logs
+*.log
+
+# macOS / editor
+.DS_Store
+.vscode/
+*.swp
+*.swo

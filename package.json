@@ -1,0 +1,15 @@
+{
+  "name": "duet",
+  "version": "1.0.0",
+  "description": "A local dashboard where Claude Code and OpenAI Codex collaborate autonomously on a shared task.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "smoke": "node scripts/smoke.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  }
+}
